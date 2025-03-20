@@ -1,0 +1,2194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Yaghi's Bounce Adventure</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#5D5CDE',
+                        danger: '#FF5252',
+                        warning: '#FFC107',
+                        success: '#4CAF50',
+                        info: '#2196F3',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        html {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        #game-canvas {
+            background-color: #f0f0f0;
+            background-image: linear-gradient(to bottom, #a1c4fd 0%, #c2e9fb 100%);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .dark #game-canvas {
+            background-color: #1a1a1a;
+            background-image: linear-gradient(to bottom, #0f2027 0%, #203a43 50%, #2c5364 100%);
+        }
+        
+        .btn {
+            min-height: 44px;
+            min-width: 100px;
+        }
+        
+        @keyframes pulse-animation {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        .pulse {
+            animation: pulse-animation 0.5s ease-in-out;
+        }
+        
+        /* Game overlay styles */
+        .game-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            z-index: 10;
+        }
+        
+        .game-overlay h2 {
+            font-size: 32px;
+            margin-bottom: 20px;
+        }
+        
+        .game-overlay p {
+            font-size: 20px;
+            margin-bottom: 25px;
+        }
+        
+        #level-transition {
+            background-color: rgba(93, 92, 222, 0.8);
+        }
+        
+        /* Controls for mobile */
+        .control-btn {
+            background-color: rgba(255, 255, 255, 0.3);
+            color: white;
+            border: 2px solid white;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            font-size: 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        .control-btn:active {
+            transform: scale(0.95);
+        }
+        
+        /* Mobile controls container */
+        .mobile-controls {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            pointer-events: none;
+            z-index: 20;
+        }
+        
+        .mobile-controls .control-btn {
+            pointer-events: auto;
+            width: 70px;
+            height: 70px;
+            font-size: 28px;
+            opacity: 0.8;
+            background-color: rgba(93, 92, 222, 0.6);
+            border: 3px solid white;
+        }
+        
+        .mobile-controls .control-btn:active {
+            background-color: rgba(93, 92, 222, 0.8);
+            transform: scale(0.9);
+        }
+
+        #debug-info {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            background-color: rgba(0,0,0,0.5);
+            color: white;
+            padding: 5px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 100;
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-white dark:bg-gray-900 min-h-screen flex flex-col items-center py-6 px-4 transition-colors duration-300">
+    <header class="text-center mb-4">
+        <h1 class="text-3xl md:text-4xl font-bold text-gray-800 dark:text-white mb-2">Yaghi's Bounce Adventure</h1>
+        <div class="flex flex-wrap justify-center gap-4 md:space-x-8 text-lg md:text-xl relative">
+            <p class="text-gray-600 dark:text-gray-300">Score: <span id="score" class="font-bold text-primary">0</span></p>
+            <p class="text-gray-600 dark:text-gray-300">Stars: <span id="stars" class="font-bold text-warning">0</span>/<span id="total-stars" class="font-bold text-warning">0</span></p>
+            <p class="text-gray-600 dark:text-gray-300">Level: <span id="level" class="font-bold text-primary">1</span></p>
+            <p class="text-gray-600 dark:text-gray-300">Difficulty: <span id="difficulty-display" class="font-bold text-success">Easy</span></p>
+            <button id="help-btn" class="absolute -right-6 top-0 w-8 h-8 rounded-full bg-primary text-white font-bold flex items-center justify-center shadow-md hover:bg-primary/80 transition-colors" aria-label="Help">?</button>
+        </div>
+    </header>
+
+    <div class="relative w-full max-w-2xl mb-6">
+        <canvas id="game-canvas" class="w-full rounded-lg"></canvas>
+        <div id="debug-info"></div>
+        
+        <!-- Mobile Touch Controls (only visible on touch devices) -->
+        <div id="mobile-controls" class="mobile-controls hidden">
+            <div id="left-btn" class="control-btn">
+                <span>←</span>
+            </div>
+            <div id="jump-btn" class="control-btn">
+                <span>↑</span>
+            </div>
+            <div id="right-btn" class="control-btn">
+                <span>→</span>
+            </div>
+        </div>
+        
+        <!-- Help Screen Overlay -->
+        <div id="help-screen" class="game-overlay rounded-lg hidden">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md max-h-[85vh] overflow-y-auto text-gray-800 dark:text-gray-200">
+                <h2 class="text-2xl font-bold mb-4 text-center text-primary">Game Guide</h2>
+                
+                <div class="mb-4">
+                    <h3 class="text-xl font-bold mb-2">Game Objective</h3>
+                    <p>Navigate your bouncy ball through obstacles, collect stars, and reach the purple portal at the end of each level.</p>
+                </div>
+                
+                <div class="mb-4">
+                    <h3 class="text-xl font-bold mb-2">Controls</h3>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li><strong>Desktop:</strong> Use ← → arrow keys to move, ↑ or Space to jump</li>
+                        <li><strong>Mobile:</strong> Use the on-screen buttons at the bottom of the game</li>
+                    </ul>
+                </div>
+                
+                <div class="mb-4">
+                    <h3 class="text-xl font-bold mb-2">Platform Types</h3>
+                    <ul class="list-disc pl-5 space-y-2">
+                        <li><span class="inline-block w-3 h-3 bg-green-500 mr-2"></span> <strong>Normal (Green):</strong> Standard platforms you can jump from</li>
+                        <li><span class="inline-block w-3 h-3 bg-orange-500 mr-2"></span> <strong>Bouncy (Orange):</strong> Gives you an extra-high bounce</li>
+                        <li><span class="inline-block w-3 h-3 bg-amber-500 mr-2"></span> <strong>Disappearing (Yellow):</strong> Vanishes shortly after you land on it</li>
+                        <li><span class="inline-block w-3 h-3 bg-blue-500 mr-2"></span> <strong>Moving (Blue):</strong> Platforms that travel back and forth</li>
+                    </ul>
+                </div>
+                
+                <div class="mb-4">
+                    <h3 class="text-xl font-bold mb-2">Difficulty Levels</h3>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li><strong>Easy:</strong> Slower falling, bigger ball, wider platforms</li>
+                        <li><strong>Normal:</strong> Standard physics and platform sizes</li>
+                        <li><strong>Hard:</strong> Faster falling, smaller ball, narrower platforms</li>
+                    </ul>
+                </div>
+                
+                <div class="mb-4">
+                    <h3 class="text-xl font-bold mb-2">Tips to Avoid Early Game Over</h3>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li>Land near the center of platforms to avoid slipping off</li>
+                        <li>Start with Easy difficulty if you're finding it too challenging</li>
+                        <li>Don't hold the jump button - tap it at the peak of your jump</li>
+                        <li>Stay on platforms longer to better time your jumps</li>
+                        <li>The ball has momentum - avoid rapid direction changes</li>
+                    </ul>
+                </div>
+                
+                <button id="close-help-btn" class="mt-4 bg-primary hover:bg-primary/80 text-white font-bold py-2 px-6 rounded-lg text-lg w-full transition-colors">
+                    Close
+                </button>
+            </div>
+        </div>
+        
+        <!-- Start Screen -->
+        <div id="start-screen" class="game-overlay rounded-lg">
+            <h2 class="text-center">Yaghi's Bounce Adventure</h2>
+            <p class="text-center mb-2">Navigate through obstacles, collect stars, and reach the portal!</p>
+            <p class="text-center mb-6">Use arrow keys or touch controls to move. Space/Up to jump.</p>
+            <button id="start-btn" class="bg-primary hover:bg-primary/80 text-white font-bold py-3 px-8 rounded-lg text-lg transition-colors">
+                Start Game
+            </button>
+        </div>
+        
+        <!-- Game Over Screen -->
+        <div id="game-over" class="game-overlay rounded-lg hidden">
+            <h2 class="text-center">Game Over!</h2>
+            <p class="text-center">Your final score: <span id="final-score">0</span></p>
+            <p class="text-center mb-6">Stars collected: <span id="final-stars">0</span></p>
+            <button id="restart-btn" class="bg-primary hover:bg-primary/80 text-white font-bold py-3 px-8 rounded-lg text-lg transition-colors">
+                Play Again
+            </button>
+        </div>
+        
+        <!-- Level Complete Screen -->
+        <div id="level-complete" class="game-overlay rounded-lg hidden">
+            <h2 class="text-center">Level Complete!</h2>
+            <p class="text-center">Score: <span id="level-score">0</span></p>
+            <p class="text-center mb-6">Stars: <span id="level-stars">0</span>/<span id="level-total-stars">0</span></p>
+            <button id="next-level-btn" class="bg-primary hover:bg-primary/80 text-white font-bold py-3 px-8 rounded-lg text-lg transition-colors">
+                Next Level
+            </button>
+        </div>
+        
+        <!-- Level Transition -->
+        <div id="level-transition" class="game-overlay rounded-lg hidden">
+            <h2 class="text-center">Level <span id="next-level">2</span></h2>
+            <p class="text-center">Get ready for the next challenge!</p>
+        </div>
+    </div>
+
+    <div class="controls flex flex-wrap justify-center gap-3">
+        <div class="flex gap-3 mb-3">
+            <button id="pause-btn" class="btn bg-primary hover:bg-primary/80 text-white font-bold py-2 px-6 rounded-lg text-lg transition-colors">
+                Pause
+            </button>
+            <button id="mute-btn" class="btn bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-bold py-2 px-6 rounded-lg text-lg transition-colors">
+                🔊
+            </button>
+        </div>
+        <div class="difficulty-controls flex gap-2">
+            <button id="easy-btn" class="btn bg-success hover:bg-success/80 text-white font-bold py-2 px-4 rounded-lg text-lg transition-colors">
+                Easy
+            </button>
+            <button id="normal-btn" class="btn bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-bold py-2 px-4 rounded-lg text-lg transition-colors">
+                Normal
+            </button>
+            <button id="hard-btn" class="btn bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-bold py-2 px-4 rounded-lg text-lg transition-colors">
+                Hard
+            </button>
+        </div>
+    </div>
+
+    <!-- Short audio data URLs -->
+    <audio id="jump-sound" src="data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAEluZm8AAAAPAAAAAwAAAFgAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMAAAAAAAAAAAAAAAJAPoAAAAAAAAAAAAAAAAAAAA//tAwAAABYQXWtAeABKlDq9X8CwCIWZN/ylPgnXyf/4JMQzH//ynjEciEQiFaSS3Kb//LymP//8QcQh1sEeUwS5TSn//+T5PqZEYo3/////+pMURjlN////+Uwdjk+TorjQpjLVu6epquZP1qBLT4Lpfjnf0dvUxWa22xo0wbFZ4jkQIgWGg1uteMApisTmPmCgTgKYVhC/j1ckoAEAAAMw3ZTyj3LfMeWr/TMDZHb8XkIFwfP0UDl9tcWa1kCXDtaTLIHDUXJYnpVzEz+QJJ0jwqyRJYsLB8PJyJQXuZfL51vW0SKu1pakFLHWpw8CxJMcmk9"></audio>
+    <audio id="collect-sound" src="data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAEluZm8AAAAPAAAAAwAAAFgAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMAAAAAAAAAAAAAAAJARmAAAAAAAAAAAAAAAAAAAA//tUwAAACHhnehAeABECjPeM8IAI/+T5P////k+T5P//J8nyf//J8n//J8nyf/+pP/+T5P////k/qT//yfJ/8nyf/+T5P///k+T5P/+T//k+T/yfJ/yfJ8nyf//yfJ8nyf/8nyf/J8n//J//yfJ/8n//J8nyf/8nyf/J8n////yf//J8n//J//J8nyf/J8n//J8n//J8nyf/8n//J//yf/8n//J/8nyf/J8nyf//J8nyf/8n//J8nyf/8n//J//J8nyf/8n//J8n//J8n//J8nyf/8nyf//J//yf/8n//J8n/+pPlNJ/8n//J/6j7B/5EeHAAAAAAAAAAAAAAAAAAAQAAH/+T0FTb3VuZCBieXRlAAAAAAAAAAA="></audio>
+    <audio id="game-over-sound" src="data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAEluZm8AAAAPAAAADwAAAFgAYGBgYGBwcHBwgICAgICQkJCQoKCgoKCwsLCwwMDAwMDQ0NDQ4ODg4ODw8PDw//////////8AAAAA//tUwAAACBRnvBAeABCgjPcw8AAIJ8nyfJ8nyf/5P//yfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyfJ8nyf/8nyfJ8nyfJ8nyfJ8nySOGYDzmZE9BU291bmQgYnl0ZQAAAAAAAAAAAAAAAAAAAA=="></audio>
+    <audio id="portal-sound" src="data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAEluZm8AAAAPAAAAAwAAAFgAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMAAAAAAAAAAAAAAAJAkkAAAAAAAAAAAAAAAAAAAA//tUwAAACNyHehAeABEFDPoM8IAIZznOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znOc5znAAw6vn//7+Vv733M95vpcyAAAAAA=="></audio>
+    <audio id="bounce-sound" src="data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA/+M4wAAAAAAAAAAAAEluZm8AAAAPAAAAAwAAAFgAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUUzLjEwMAAAAAAAAAAAAAAAJAGkAAAAAAAAAAAAAAAAAAAA//sQxAADwAABpAAAACAAADSAAAAETEFNRTMuMTAwVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV"></audio>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Game canvas setup
+            const canvas = document.getElementById('game-canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Debug element
+            const debugInfo = document.getElementById('debug-info');
+            // Set to true to enable debugging
+            const debugMode = false;
+            
+            if (debugMode) {
+                debugInfo.style.display = 'block';
+            }
+            
+            // Game state
+            let gameRunning = false;
+            let gamePaused = false;
+            let score = 0;
+            let starsCollected = 0;
+            let totalStars = 0;
+            let level = 1;
+            let muted = false;
+            
+            // Difficulty settings
+            const difficulties = {
+                easy: {
+                    acceleration: 0.25,
+                    maxSpeedX: 5,
+                    maxSpeedY: 8,
+                    jumpForce: -10,
+                    bounceForce: -7,
+                    playerRadius: 18,
+                    obstacleSpeed: 0.7,
+                    platformWidth: 1.3, // Platform width multiplier
+                    cameraSmoothing: 0.08
+                },
+                normal: {
+                    acceleration: 0.5,
+                    maxSpeedX: 7,
+                    maxSpeedY: 15,
+                    jumpForce: -12,
+                    bounceForce: -8,
+                    playerRadius: 15,
+                    obstacleSpeed: 1.0,
+                    platformWidth: 1.0,
+                    cameraSmoothing: 0.1
+                },
+                hard: {
+                    acceleration: 0.7,
+                    maxSpeedX: 8,
+                    maxSpeedY: 18,
+                    jumpForce: -14,
+                    bounceForce: -10,
+                    playerRadius: 12,
+                    obstacleSpeed: 1.5,
+                    platformWidth: 0.8,
+                    cameraSmoothing: 0.15
+                }
+            };
+
+            // Current difficulty setting
+            let currentDifficulty = 'easy';
+            
+            // Player (ball) properties
+            let player = {
+                x: 0,
+                y: 0,
+                radius: difficulties.easy.playerRadius,
+                speedX: 0,
+                speedY: 0,
+                acceleration: difficulties.easy.acceleration,
+                maxSpeedX: difficulties.easy.maxSpeedX,
+                maxSpeedY: difficulties.easy.maxSpeedY,
+                isJumping: false,
+                jumpForce: difficulties.easy.jumpForce,
+                bounceForce: difficulties.easy.bounceForce,
+                color: '#5D5CDE',
+                onPlatform: false,
+                canJump: false
+            };
+            
+            // Camera and game world
+            let camera = {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+                following: { x: 0, y: 0 }
+            };
+            
+            // Game elements
+            let platforms = [];
+            let stars = [];
+            let obstacles = [];
+            let portal = null;
+            let levelLength = 5000; // Default level length
+            
+            // Controls state
+            let keys = {};
+            let touchControls = {
+                left: false,
+                right: false,
+                jump: false
+            };
+            
+            // Audio elements
+            const jumpSound = document.getElementById('jump-sound');
+            const collectSound = document.getElementById('collect-sound');
+            const gameOverSound = document.getElementById('game-over-sound');
+            const portalSound = document.getElementById('portal-sound');
+            const bounceSound = document.getElementById('bounce-sound');
+            
+            // DOM elements
+            const startScreen = document.getElementById('start-screen');
+            const gameOverScreen = document.getElementById('game-over');
+            const levelCompleteScreen = document.getElementById('level-complete');
+            const levelTransition = document.getElementById('level-transition');
+            const startBtn = document.getElementById('start-btn');
+            const restartBtn = document.getElementById('restart-btn');
+            const nextLevelBtn = document.getElementById('next-level-btn');
+            const pauseBtn = document.getElementById('pause-btn');
+            const muteBtn = document.getElementById('mute-btn');
+            const mobileControls = document.getElementById('mobile-controls');
+            const leftBtn = document.getElementById('left-btn');
+            const rightBtn = document.getElementById('right-btn');
+            const jumpBtn = document.getElementById('jump-btn');
+            
+            // Score and level displays
+            const scoreDisplay = document.getElementById('score');
+            const starsDisplay = document.getElementById('stars');
+            const totalStarsDisplay = document.getElementById('total-stars');
+            const levelDisplay = document.getElementById('level');
+            const finalScoreDisplay = document.getElementById('final-score');
+            const finalStarsDisplay = document.getElementById('final-stars');
+            const levelScoreDisplay = document.getElementById('level-score');
+            const levelStarsDisplay = document.getElementById('level-stars');
+            const levelTotalStarsDisplay = document.getElementById('level-total-stars');
+            const nextLevelDisplay = document.getElementById('next-level');
+            
+            // Canvas dimensions
+            let canvasWidth = 800;
+            let canvasHeight = 500;
+            
+            // Check if device has touch screen
+            function isTouchDevice() {
+                return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+            }
+            
+            // Show/hide mobile controls based on device
+            if (isTouchDevice()) {
+                mobileControls.classList.remove('hidden');
+                document.body.classList.add('touch-device');
+            }
+            
+            // Performance optimization flag
+            let lowPerformanceMode = false;
+            
+            // Check if we're on a low-performance device (estimation based on screen size and touch)
+            if (window.innerWidth < 600 && isTouchDevice()) {
+                lowPerformanceMode = true;
+            }
+            
+            // Responsive sizing
+            function resizeCanvas() {
+                const containerWidth = canvas.parentElement.clientWidth;
+                canvas.width = containerWidth;
+                canvas.height = Math.min(containerWidth * 0.6, 500);
+                canvasWidth = canvas.width;
+                canvasHeight = canvas.height;
+                
+                // Update camera dimensions
+                camera.width = canvasWidth;
+                camera.height = canvasHeight;
+                
+                // Update game elements if needed
+                if (gameRunning && !gamePaused) {
+                    drawGame();
+                }
+            }
+            
+            // Initial setup
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            
+            // Define level layouts with optimization
+            function createLevel(levelNum) {
+                // Clear arrays more efficiently
+                platforms.length = 0;
+                stars.length = 0;
+                obstacles.length = 0;
+                portal = null;
+                totalStars = 0;
+                
+                // Apply difficulty modifier to platform creation
+                const platformWidthModifier = difficulties[currentDifficulty].platformWidth;
+                
+                // Scale factors based on canvas size
+                const baseHeight = canvasHeight * 0.7;
+                const platformHeight = 20;
+                
+                // For debugging
+                if (debugMode) {
+                    debugInfo.textContent = `Level: ${levelNum}, BaseHeight: ${baseHeight}`;
+                }
+                
+                switch(levelNum) {
+                    case 1:
+                        // Level 1: Introduction to basic mechanics
+                        levelLength = canvasWidth * 5;
+                        
+                        // Starting platform
+                        platforms.push({
+                            x: 0,
+                            y: baseHeight,
+                            width: canvasWidth * 0.5 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Middle platforms
+                        platforms.push({
+                            x: canvasWidth * 0.7,
+                            y: baseHeight,
+                            width: canvasWidth * 0.3 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        platforms.push({
+                            x: canvasWidth * 1.2,
+                            y: baseHeight - 50,
+                            width: canvasWidth * 0.3 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        platforms.push({
+                            x: canvasWidth * 1.7,
+                            y: baseHeight,
+                            width: canvasWidth * 0.5 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        platforms.push({
+                            x: canvasWidth * 2.4,
+                            y: baseHeight - 70,
+                            width: canvasWidth * 0.4 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        platforms.push({
+                            x: canvasWidth * 3.0,
+                            y: baseHeight,
+                            width: canvasWidth * 0.7 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Bouncy platform
+                        platforms.push({
+                            x: canvasWidth * 3.9,
+                            y: baseHeight,
+                            width: canvasWidth * 0.2 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#FF5722',
+                            type: 'bouncy'
+                        });
+                        
+                        // Final platform with portal
+                        platforms.push({
+                            x: canvasWidth * 4.3,
+                            y: baseHeight - 100,
+                            width: canvasWidth * 0.5 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Create stars
+                        for (let i = 0; i < 15; i++) {
+                            let starX, starY;
+                            
+                            // Position stars above platforms
+                            if (i < 3) {
+                                starX = canvasWidth * 0.2 + i * 70;
+                                starY = baseHeight - 50;
+                            } else if (i < 6) {
+                                starX = canvasWidth * 1.3 + (i - 3) * 50;
+                                starY = baseHeight - 100;
+                            } else if (i < 9) {
+                                starX = canvasWidth * 1.8 + (i - 6) * 70;
+                                starY = baseHeight - 50;
+                            } else if (i < 12) {
+                                starX = canvasWidth * 2.5 + (i - 9) * 50;
+                                starY = baseHeight - 120;
+                            } else {
+                                starX = canvasWidth * 3.2 + (i - 12) * 70;
+                                starY = baseHeight - 50;
+                            }
+                            
+                            stars.push({
+                                x: starX,
+                                y: starY,
+                                radius: 15,
+                                color: '#FFC107',
+                                collected: false
+                            });
+                            
+                            totalStars++;
+                        }
+                        
+                        // Add simple obstacles (spikes)
+                        obstacles.push({
+                            x: canvasWidth * 1.1,
+                            y: baseHeight - 20,
+                            width: 100,
+                            height: 20,
+                            color: '#F44336',
+                            type: 'spike'
+                        });
+                        
+                        obstacles.push({
+                            x: canvasWidth * 2.25,
+                            y: baseHeight - 20,
+                            width: 100,
+                            height: 20,
+                            color: '#F44336',
+                            type: 'spike'
+                        });
+                        
+                        // Add portal (level end)
+                        portal = {
+                            x: canvasWidth * 4.5,
+                            y: baseHeight - 160,
+                            width: 60,
+                            height: 100,
+                            color: '#9C27B0'
+                        };
+                        
+                        // Player starting position - fixed to be safely above the platform
+                        player.x = 50;
+                        player.y = baseHeight - player.radius - 5; // Important fix: position exactly above platform
+                        player.speedX = 0;
+                        player.speedY = 0;
+                        break;
+                        
+                    case 2:
+                        // Level 2: More complex layout with moving platforms
+                        levelLength = canvasWidth * 6;
+                        
+                        // Starting platform
+                        platforms.push({
+                            x: 0,
+                            y: baseHeight,
+                            width: canvasWidth * 0.4 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Add small platforms with gaps
+                        for (let i = 0; i < 4; i++) {
+                            platforms.push({
+                                x: canvasWidth * (0.6 + i * 0.3),
+                                y: baseHeight - (i % 2 === 0 ? 30 : 0),
+                                width: canvasWidth * 0.2 * platformWidthModifier,
+                                height: platformHeight,
+                                color: '#4CAF50',
+                                type: 'normal'
+                            });
+                        }
+                        
+                        // Add a moving platform
+                        platforms.push({
+                            x: canvasWidth * 1.9,
+                            y: baseHeight - 50,
+                            width: canvasWidth * 0.2 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#2196F3',
+                            type: 'moving',
+                            moveSpeed: 1.5 * difficulties[currentDifficulty].obstacleSpeed,
+                            moveRange: canvasWidth * 0.5,
+                            startX: canvasWidth * 1.9
+                        });
+                        
+                        // Add more static platforms
+                        platforms.push({
+                            x: canvasWidth * 2.6,
+                            y: baseHeight,
+                            width: canvasWidth * 0.5 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Add a disappearing platform
+                        platforms.push({
+                            x: canvasWidth * 3.3,
+                            y: baseHeight - 40,
+                            width: canvasWidth * 0.2 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#FF9800',
+                            type: 'disappearing',
+                            countdown: 0,
+                            origColor: '#FF9800'
+                        });
+                        
+                        platforms.push({
+                            x: canvasWidth * 3.7,
+                            y: baseHeight - 80,
+                            width: canvasWidth * 0.3 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Add bouncy platforms
+                        platforms.push({
+                            x: canvasWidth * 4.2,
+                            y: baseHeight,
+                            width: canvasWidth * 0.2 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#FF5722',
+                            type: 'bouncy'
+                        });
+                        
+                        platforms.push({
+                            x: canvasWidth * 4.7,
+                            y: baseHeight - 150,
+                            width: canvasWidth * 0.4 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        platforms.push({
+                            x: canvasWidth * 5.3,
+                            y: baseHeight - 100,
+                            width: canvasWidth * 0.5 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Create more stars
+                        for (let i = 0; i < 20; i++) {
+                            let starX, starY;
+                            
+                            // Distribute stars throughout the level
+                            if (i < 5) {
+                                starX = canvasWidth * (0.1 + i * 0.2);
+                                starY = baseHeight - 60 - (i % 2) * 30;
+                            } else if (i < 10) {
+                                starX = canvasWidth * (1.2 + (i - 5) * 0.3);
+                                starY = baseHeight - 100;
+                            } else if (i < 15) {
+                                starX = canvasWidth * (2.7 + (i - 10) * 0.2);
+                                starY = baseHeight - 60 - (i % 3) * 30;
+                            } else {
+                                starX = canvasWidth * (3.8 + (i - 15) * 0.3);
+                                starY = baseHeight - 130;
+                            }
+                            
+                            stars.push({
+                                x: starX,
+                                y: starY,
+                                radius: 15,
+                                color: '#FFC107',
+                                collected: false
+                            });
+                            
+                            totalStars++;
+                        }
+                        
+                        // Add more obstacles
+                        obstacles.push({
+                            x: canvasWidth * 0.5,
+                            y: baseHeight - 20,
+                            width: 60,
+                            height: 20,
+                            color: '#F44336',
+                            type: 'spike'
+                        });
+                        
+                        obstacles.push({
+                            x: canvasWidth * 1.5,
+                            y: baseHeight - 20,
+                            width: 80,
+                            height: 20,
+                            color: '#F44336',
+                            type: 'spike'
+                        });
+                        
+                        obstacles.push({
+                            x: canvasWidth * 2.5,
+                            y: baseHeight - 20,
+                            width: 100,
+                            height: 20,
+                            color: '#F44336',
+                            type: 'spike'
+                        });
+                        
+                        // Moving obstacle
+                        obstacles.push({
+                            x: canvasWidth * 3.1,
+                            y: baseHeight - 100,
+                            width: 50,
+                            height: 50,
+                            color: '#F44336',
+                            type: 'moving_obstacle',
+                            moveSpeed: 2 * difficulties[currentDifficulty].obstacleSpeed,
+                            moveVertical: true,
+                            moveRange: 150,
+                            startY: baseHeight - 100
+                        });
+                        
+                        // Add portal (level end)
+                        portal = {
+                            x: canvasWidth * 5.5,
+                            y: baseHeight - 160,
+                            width: 60,
+                            height: 100,
+                            color: '#9C27B0'
+                        };
+                        
+                        // Player starting position
+                        player.x = 50;
+                        player.y = baseHeight - player.radius - 5;
+                        player.speedX = 0;
+                        player.speedY = 0;
+                        break;
+                        
+                    case 3:
+                        // Level 3: Advanced challenges
+                        levelLength = canvasWidth * 7;
+                        
+                        // Starting platform
+                        platforms.push({
+                            x: 0,
+                            y: baseHeight,
+                            width: canvasWidth * 0.3 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Create a more complex pattern of platforms
+                        platforms.push({
+                            x: canvasWidth * 0.5,
+                            y: baseHeight - 40,
+                            width: canvasWidth * 0.2 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        platforms.push({
+                            x: canvasWidth * 0.9,
+                            y: baseHeight - 80,
+                            width: canvasWidth * 0.2 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Bouncy platform to launch player
+                        platforms.push({
+                            x: canvasWidth * 1.3,
+                            y: baseHeight,
+                            width: canvasWidth * 0.2 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#FF5722',
+                            type: 'bouncy'
+                        });
+                        
+                        // Higher platform after the bounce
+                        platforms.push({
+                            x: canvasWidth * 1.7,
+                            y: baseHeight - 150,
+                            width: canvasWidth * 0.4 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Moving platform section
+                        platforms.push({
+                            x: canvasWidth * 2.3,
+                            y: baseHeight - 120,
+                            width: canvasWidth * 0.2 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#2196F3',
+                            type: 'moving',
+                            moveSpeed: 2 * difficulties[currentDifficulty].obstacleSpeed,
+                            moveRange: canvasWidth * 0.6,
+                            startX: canvasWidth * 2.3
+                        });
+                        
+                        platforms.push({
+                            x: canvasWidth * 3.1,
+                            y: baseHeight - 80,
+                            width: canvasWidth * 0.2 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Series of disappearing platforms
+                        for (let i = 0; i < 3; i++) {
+                            platforms.push({
+                                x: canvasWidth * (3.5 + i * 0.25),
+                                y: baseHeight - 40,
+                                width: canvasWidth * 0.15 * platformWidthModifier,
+                                height: platformHeight,
+                                color: '#FF9800',
+                                type: 'disappearing',
+                                countdown: 0,
+                                origColor: '#FF9800'
+                            });
+                        }
+                        
+                        // Safe platform after disappearing ones
+                        platforms.push({
+                            x: canvasWidth * 4.3,
+                            y: baseHeight,
+                            width: canvasWidth * 0.3 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Vertical moving platform challenge
+                        platforms.push({
+                            x: canvasWidth * 4.8,
+                            y: baseHeight - 100,
+                            width: canvasWidth * 0.2 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#2196F3',
+                            type: 'moving',
+                            moveSpeed: 1.5 * difficulties[currentDifficulty].obstacleSpeed,
+                            moveVertical: true,
+                            moveRange: 150,
+                            startY: baseHeight - 100
+                        });
+                        
+                        // Platform pattern for stars collection
+                        platforms.push({
+                            x: canvasWidth * 5.2,
+                            y: baseHeight - 50,
+                            width: canvasWidth * 0.3 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        platforms.push({
+                            x: canvasWidth * 5.7,
+                            y: baseHeight - 100,
+                            width: canvasWidth * 0.3 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Final platform with portal
+                        platforms.push({
+                            x: canvasWidth * 6.2,
+                            y: baseHeight - 150,
+                            width: canvasWidth * 0.5 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Create stars with more complex patterns
+                        // Star path 1: Along starting platforms
+                        for (let i = 0; i < 5; i++) {
+                            stars.push({
+                                x: canvasWidth * (0.1 + i * 0.2),
+                                y: baseHeight - 70 - (i % 2) * 30,
+                                radius: 15,
+                                color: '#FFC107',
+                                collected: false
+                            });
+                            
+                            totalStars++;
+                        }
+                        
+                        // Star path 2: Above the bouncy platform
+                        for (let i = 0; i < 3; i++) {
+                            stars.push({
+                                x: canvasWidth * (1.35 + i * 0.12),
+                                y: baseHeight - 100 - i * 30,
+                                radius: 15,
+                                color: '#FFC107',
+                                collected: false
+                            });
+                            
+                            totalStars++;
+                        }
+                        
+                        // Star path 3: High platform area
+                        for (let i = 0; i < 4; i++) {
+                            stars.push({
+                                x: canvasWidth * (1.8 + i * 0.1),
+                                y: baseHeight - 200,
+                                radius: 15,
+                                color: '#FFC107',
+                                collected: false
+                            });
+                            
+                            totalStars++;
+                        }
+                        
+                        // Star path 4: Moving platform section
+                        for (let i = 0; i < 5; i++) {
+                            stars.push({
+                                x: canvasWidth * (2.4 + i * 0.15),
+                                y: baseHeight - 160,
+                                radius: 15,
+                                color: '#FFC107',
+                                collected: false
+                            });
+                            
+                            totalStars++;
+                        }
+                        
+                        // Star path 5: Disappearing platforms area
+                        for (let i = 0; i < 3; i++) {
+                            stars.push({
+                                x: canvasWidth * (3.55 + i * 0.25),
+                                y: baseHeight - 90,
+                                radius: 15,
+                                color: '#FFC107',
+                                collected: false
+                            });
+                            
+                            totalStars++;
+                        }
+                        
+                        // Star path 6: Final section
+                        for (let i = 0; i < 5; i++) {
+                            stars.push({
+                                x: canvasWidth * (5.0 + i * 0.25),
+                                y: baseHeight - 180,
+                                radius: 15,
+                                color: '#FFC107',
+                                collected: false
+                            });
+                            
+                            totalStars++;
+                        }
+                        
+                        // Add more challenging obstacles
+                        // Spike pits
+                        obstacles.push({
+                            x: canvasWidth * 0.35,
+                            y: baseHeight - 20,
+                            width: 100,
+                            height: 20,
+                            color: '#F44336',
+                            type: 'spike'
+                        });
+                        
+                        obstacles.push({
+                            x: canvasWidth * 0.7,
+                            y: baseHeight - 20,
+                            width: 150,
+                            height: 20,
+                            color: '#F44336',
+                            type: 'spike'
+                        });
+                        
+                        obstacles.push({
+                            x: canvasWidth * 1.5,
+                            y: baseHeight - 20,
+                            width: 150,
+                            height: 20,
+                            color: '#F44336',
+                            type: 'spike'
+                        });
+                        
+                        // Moving obstacles
+                        obstacles.push({
+                            x: canvasWidth * 2.1,
+                            y: baseHeight - 180,
+                            width: 40,
+                            height: 40,
+                            color: '#F44336',
+                            type: 'moving_obstacle',
+                            moveSpeed: 3 * difficulties[currentDifficulty].obstacleSpeed,
+                            moveVertical: true,
+                            moveRange: 100,
+                            startY: baseHeight - 180
+                        });
+                        
+                        obstacles.push({
+                            x: canvasWidth * 3.0,
+                            y: baseHeight - 140,
+                            width: 60,
+                            height: 20,
+                            color: '#F44336',
+                            type: 'moving_obstacle',
+                            moveSpeed: 2 * difficulties[currentDifficulty].obstacleSpeed,
+                            moveRange: canvasWidth * 0.3,
+                            startX: canvasWidth * 3.0
+                        });
+                        
+                        // Larger spike section
+                        obstacles.push({
+                            x: canvasWidth * 4.0,
+                            y: baseHeight - 20,
+                            width: 250,
+                            height: 20,
+                            color: '#F44336',
+                            type: 'spike'
+                        });
+                        
+                        // Rotating obstacle
+                        obstacles.push({
+                            x: canvasWidth * 5.5,
+                            y: baseHeight - 200,
+                            width: 80,
+                            height: 20,
+                            color: '#F44336',
+                            type: 'rotating',
+                            angle: 0,
+                            rotateSpeed: 0.02,
+                            centerX: canvasWidth * 5.5,
+                            centerY: baseHeight - 150,
+                            radius: 50
+                        });
+                        
+                        // Add portal (level end)
+                        portal = {
+                            x: canvasWidth * 6.4,
+                            y: baseHeight - 210,
+                            width: 60,
+                            height: 100,
+                            color: '#9C27B0'
+                        };
+                        
+                        // Player starting position
+                        player.x = 50;
+                        player.y = baseHeight - player.radius - 5;
+                        player.speedX = 0;
+                        player.speedY = 0;
+                        break;
+                    
+                    default:
+                        // Default level (similar to level 1 but harder)
+                        levelLength = canvasWidth * 5;
+                        
+                        // Starting platform
+                        platforms.push({
+                            x: 0,
+                            y: baseHeight,
+                            width: canvasWidth * 0.4 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // More complex platform patterns
+                        for (let i = 0; i < 10; i++) {
+                            const platformType = Math.random() < 0.7 ? 'normal' : 
+                                                (Math.random() < 0.5 ? 'bouncy' : 'disappearing');
+                            
+                            const platformColor = platformType === 'normal' ? '#4CAF50' : 
+                                                (platformType === 'bouncy' ? '#FF5722' : '#FF9800');
+                            
+                            // Create platform
+                            platforms.push({
+                                x: canvasWidth * (0.6 + i * 0.4),
+                                y: baseHeight - Math.random() * 150,
+                                width: canvasWidth * (0.2 + Math.random() * 0.2) * platformWidthModifier,
+                                height: platformHeight,
+                                color: platformColor,
+                                type: platformType,
+                                countdown: 0,
+                                origColor: platformColor
+                            });
+                            
+                            // Occasionally add a moving platform
+                            if (i % 3 === 0) {
+                                const moveX = canvasWidth * (0.8 + i * 0.4);
+                                platforms.push({
+                                    x: moveX,
+                                    y: baseHeight - 50 - Math.random() * 100,
+                                    width: canvasWidth * 0.15 * platformWidthModifier,
+                                    height: platformHeight,
+                                    color: '#2196F3',
+                                    type: 'moving',
+                                    moveSpeed: (1 + Math.random() * 2) * difficulties[currentDifficulty].obstacleSpeed,
+                                    moveRange: canvasWidth * 0.3,
+                                    startX: moveX,
+                                    moveVertical: Math.random() > 0.7
+                                });
+                            }
+                        }
+                        
+                        // Final platform with portal
+                        platforms.push({
+                            x: canvasWidth * 4.6,
+                            y: baseHeight - 100,
+                            width: canvasWidth * 0.3 * platformWidthModifier,
+                            height: platformHeight,
+                            color: '#4CAF50',
+                            type: 'normal'
+                        });
+                        
+                        // Add stars throughout the level
+                        for (let i = 0; i < 25; i++) {
+                            stars.push({
+                                x: canvasWidth * (0.1 + i * 0.2),
+                                y: baseHeight - 50 - Math.random() * 150,
+                                radius: 15,
+                                color: '#FFC107',
+                                collected: false
+                            });
+                            
+                            totalStars++;
+                        }
+                        
+                        // Add obstacles
+                        for (let i = 0; i < 8; i++) {
+                            const obsType = Math.random() < 0.6 ? 'spike' : 'moving_obstacle';
+                            
+                            if (obsType === 'spike') {
+                                obstacles.push({
+                                    x: canvasWidth * (0.5 + i * 0.5),
+                                    y: baseHeight - 20,
+                                    width: 80 + Math.random() * 40,
+                                    height: 20,
+                                    color: '#F44336',
+                                    type: 'spike'
+                                });
+                            } else {
+                                const moveX = canvasWidth * (0.7 + i * 0.5);
+                                obstacles.push({
+                                    x: moveX,
+                                    y: baseHeight - 120,
+                                    width: 40,
+                                    height: 40,
+                                    color: '#F44336',
+                                    type: 'moving_obstacle',
+                                    moveSpeed: (1.5 + Math.random() * 2) * difficulties[currentDifficulty].obstacleSpeed,
+                                    moveRange: canvasWidth * 0.3,
+                                    startX: moveX,
+                                    moveVertical: Math.random() > 0.5
+                                });
+                            }
+                        }
+                        
+                        // Add portal (level end)
+                        portal = {
+                            x: canvasWidth * 4.7,
+                            y: baseHeight - 160,
+                            width: 60,
+                            height: 100,
+                            color: '#9C27B0'
+                        };
+                        
+                        // Player starting position
+                        player.x = 50;
+                        player.y = baseHeight - player.radius - 5;
+                        player.speedX = 0;
+                        player.speedY = 0;
+                        break;
+                }
+                
+                // Update displays
+                totalStarsDisplay.textContent = totalStars;
+                starsDisplay.textContent = starsCollected;
+                
+                // Debug info
+                if (debugMode) {
+                    debugInfo.textContent += `, Player: ${Math.round(player.x)},${Math.round(player.y)}, Platform: ${Math.round(platforms[0].y)}`;
+                }
+            }
+            
+            // Drawing functions
+            function drawPlayer() {
+                ctx.beginPath();
+                ctx.arc(player.x - camera.x, player.y - camera.y, player.radius, 0, Math.PI * 2);
+                ctx.fillStyle = player.color;
+                ctx.fill();
+                ctx.closePath();
+                
+                // Add a shine effect
+                ctx.beginPath();
+                ctx.arc(player.x - camera.x - player.radius / 3, 
+                        player.y - camera.y - player.radius / 3, 
+                        player.radius / 3, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.fill();
+                ctx.closePath();
+            }
+            
+            function drawPlatforms() {
+                platforms.forEach(platform => {
+                    // Only draw platforms that are visible in the camera view
+                    if (platform.x + platform.width > camera.x && 
+                        platform.x < camera.x + camera.width) {
+                        
+                        ctx.beginPath();
+                        ctx.rect(platform.x - camera.x, platform.y - camera.y, platform.width, platform.height);
+                        ctx.fillStyle = platform.color;
+                        ctx.fill();
+                        ctx.closePath();
+                        
+                        // Draw platform details based on type
+                        if (platform.type === 'bouncy') {
+                            // Draw spring lines
+                            for (let i = 1; i < platform.width / 15; i++) {
+                                ctx.beginPath();
+                                ctx.moveTo(platform.x - camera.x + i * 15, platform.y - camera.y);
+                                ctx.lineTo(platform.x - camera.x + i * 15, platform.y - camera.y + platform.height);
+                                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                                ctx.lineWidth = 2;
+                                ctx.stroke();
+                                ctx.closePath();
+                            }
+                        } else if (platform.type === 'disappearing') {
+                            // Draw countdown indicator
+                            if (platform.countdown > 0) {
+                                const indicatorWidth = (platform.width * (60 - platform.countdown)) / 60;
+                                ctx.beginPath();
+                                ctx.rect(platform.x - camera.x, platform.y - camera.y, indicatorWidth, 5);
+                                ctx.fillStyle = 'rgba(255, 0, 0, 0.7)';
+                                ctx.fill();
+                                ctx.closePath();
+                            }
+                        }
+                    }
+                });
+            }
+            
+            function drawStars() {
+                stars.forEach(star => {
+                    // Only draw stars that are visible and not collected
+                    if (!star.collected && 
+                        star.x + star.radius > camera.x && 
+                        star.x - star.radius < camera.x + camera.width) {
+                        
+                        // Draw star shape
+                        ctx.save();
+                        ctx.translate(star.x - camera.x, star.y - camera.y);
+                        ctx.beginPath();
+                        
+                        // Draw 5-pointed star
+                        for (let i = 0; i < 5; i++) {
+                            const angle = (Math.PI * 2 * i) / 5 - Math.PI / 2;
+                            const outerX = Math.cos(angle) * star.radius;
+                            const outerY = Math.sin(angle) * star.radius;
+                            
+                            const innerAngle = angle + Math.PI / 5;
+                            const innerRadius = star.radius * 0.4;
+                            const innerX = Math.cos(innerAngle) * innerRadius;
+                            const innerY = Math.sin(innerAngle) * innerRadius;
+                            
+                            if (i === 0) {
+                                ctx.moveTo(outerX, outerY);
+                            } else {
+                                ctx.lineTo(outerX, outerY);
+                            }
+                            
+                            ctx.lineTo(innerX, innerY);
+                        }
+                        
+                        ctx.closePath();
+                        ctx.fillStyle = star.color;
+                        ctx.fill();
+                        
+                        // Add a shine effect
+                        ctx.beginPath();
+                        ctx.arc(-star.radius / 3, -star.radius / 3, star.radius / 4, 0, Math.PI * 2);
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                        ctx.fill();
+                        ctx.closePath();
+                        
+                        ctx.restore();
+                    }
+                });
+            }
+            
+            function drawObstacles() {
+                obstacles.forEach(obstacle => {
+                    // Only draw obstacles that are visible
+                    if (obstacle.x + obstacle.width > camera.x && 
+                        obstacle.x < camera.x + camera.width) {
+                        
+                        ctx.save();
+                        
+                        if (obstacle.type === 'rotating') {
+                            // Draw rotating obstacles
+                            ctx.translate(obstacle.centerX - camera.x, obstacle.centerY - camera.y);
+                            ctx.rotate(obstacle.angle);
+                            ctx.beginPath();
+                            ctx.rect(-obstacle.width / 2, -obstacle.height / 2, obstacle.width, obstacle.height);
+                            ctx.fillStyle = obstacle.color;
+                            ctx.fill();
+                            ctx.closePath();
+                        } else if (obstacle.type === 'spike') {
+                            // Draw triangular spikes
+                            const spikeWidth = obstacle.width / 5;
+                            for (let i = 0; i < 5; i++) {
+                                const spikeX = obstacle.x + i * spikeWidth;
+                                
+                                ctx.beginPath();
+                                ctx.moveTo(spikeX - camera.x, obstacle.y - camera.y + obstacle.height);
+                                ctx.lineTo(spikeX + spikeWidth / 2 - camera.x, obstacle.y - camera.y - obstacle.height);
+                                ctx.lineTo(spikeX + spikeWidth - camera.x, obstacle.y - camera.y + obstacle.height);
+                                ctx.closePath();
+                                ctx.fillStyle = obstacle.color;
+                                ctx.fill();
+                            }
+                        } else {
+                            // Draw regular obstacle
+                            ctx.beginPath();
+                            ctx.rect(obstacle.x - camera.x, obstacle.y - camera.y, obstacle.width, obstacle.height);
+                            ctx.fillStyle = obstacle.color;
+                            ctx.fill();
+                            ctx.closePath();
+                        }
+                        
+                        ctx.restore();
+                    }
+                });
+            }
+            
+            function drawPortal() {
+                if (portal && 
+                    portal.x + portal.width > camera.x && 
+                    portal.x < camera.x + camera.width) {
+                    
+                    // Draw swirling portal effect
+                    const time = Date.now() * 0.002;
+                    const centerX = portal.x + portal.width / 2 - camera.x;
+                    const centerY = portal.y + portal.height / 2 - camera.y;
+                    
+                    // Draw swirl pattern
+                    for (let i = 0; i < 5; i++) {
+                        const radius = portal.width * 0.4 - i * 5;
+                        const angleOffset = time + i * 0.5;
+                        
+                        ctx.beginPath();
+                        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+                        ctx.fillStyle = `rgba(${144 + i * 20}, ${39 + i * 5}, ${176 - i * 10}, ${0.8 - i * 0.1})`;
+                        ctx.fill();
+                        ctx.closePath();
+                        
+                        // Draw wavy circle
+                        ctx.beginPath();
+                        for (let j = 0; j < 360; j += 5) {
+                            const angle = (j * Math.PI) / 180;
+                            const waveRadius = radius + Math.sin(angle * 8 + angleOffset) * 3;
+                            const x = centerX + Math.cos(angle) * waveRadius;
+                            const y = centerY + Math.sin(angle) * waveRadius;
+                            
+                            if (j === 0) {
+                                ctx.moveTo(x, y);
+                            } else {
+                                ctx.lineTo(x, y);
+                            }
+                        }
+                        ctx.closePath();
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+                    
+                    // Draw portal frame
+                    ctx.beginPath();
+                    ctx.rect(portal.x - camera.x, portal.y - camera.y, portal.width, portal.height);
+                    ctx.strokeStyle = '#4A148C';
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+                    ctx.closePath();
+                }
+            }
+            
+            function drawBackground() {
+                // Skip detailed backgrounds on low performance mode
+                if (lowPerformanceMode) {
+                    return;
+                }
+                
+                // Draw simple parallax layers
+                const parallaxSpeed = 0.3;
+                const mountainOffset = (camera.x * parallaxSpeed) % canvasWidth;
+                
+                // Draw mountains in the background
+                for (let i = 0; i < Math.ceil(canvasWidth / 300) + 1; i++) {
+                    const x = i * 300 - mountainOffset;
+                    
+                    // Mountain shape
+                    ctx.beginPath();
+                    ctx.moveTo(x - 50, canvasHeight);
+                    ctx.lineTo(x + 100, canvasHeight - 120);
+                    ctx.lineTo(x + 250, canvasHeight);
+                    ctx.closePath();
+                    
+                    // Mountain color based on dark mode
+                    if (document.documentElement.classList.contains('dark')) {
+                        ctx.fillStyle = 'rgba(25, 42, 86, 0.5)';
+                    } else {
+                        ctx.fillStyle = 'rgba(66, 165, 245, 0.3)';
+                    }
+                    ctx.fill();
+                }
+                
+                // Draw clouds at different depths (with fewer clouds in medium performance)
+                const cloudOffset1 = (camera.x * 0.1) % canvasWidth;
+                const cloudOffset2 = (camera.x * 0.2) % canvasWidth;
+                
+                // Draw fewer clouds for better performance
+                const cloudDensity = canvasWidth < 600 ? 300 : 200;
+                
+                // Draw distant clouds
+                for (let i = 0; i < Math.ceil(canvasWidth / cloudDensity) + 1; i++) {
+                    const x = i * cloudDensity - cloudOffset1;
+                    const y = 80 + i % 3 * 20;
+                    
+                    drawCloud(x, y, 40, 'rgba(255, 255, 255, 0.4)');
+                }
+                
+                // Draw closer clouds only on wider screens
+                if (canvasWidth > 500) {
+                    for (let i = 0; i < Math.ceil(canvasWidth / 350) + 1; i++) {
+                        const x = i * 350 - cloudOffset2;
+                        const y = 120 + i % 2 * 30;
+                        
+                        drawCloud(x, y, 60, 'rgba(255, 255, 255, 0.6)');
+                    }
+                }
+            }
+            
+            function drawCloud(x, y, size, color) {
+                ctx.beginPath();
+                ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+                ctx.arc(x + size / 2, y - size / 4, size / 3, 0, Math.PI * 2);
+                ctx.arc(x + size, y, size / 2, 0, Math.PI * 2);
+                ctx.fillStyle = color;
+                ctx.fill();
+                ctx.closePath();
+            }
+            
+            function drawUI() {
+                // Draw progress bar at the top
+                const progress = Math.min(player.x / levelLength, 1);
+                const progressBarWidth = canvasWidth - 40;
+                const progressBarHeight = 10;
+                
+                ctx.beginPath();
+                ctx.rect(20, 20, progressBarWidth, progressBarHeight);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.fill();
+                ctx.closePath();
+                
+                ctx.beginPath();
+                ctx.rect(20, 20, progressBarWidth * progress, progressBarHeight);
+                ctx.fillStyle = '#4CAF50';
+                ctx.fill();
+                ctx.closePath();
+                
+                // Draw player icon on progress bar
+                const playerIconX = 20 + progressBarWidth * progress;
+                ctx.beginPath();
+                ctx.arc(playerIconX, 20 + progressBarHeight / 2, 10, 0, Math.PI * 2);
+                ctx.fillStyle = player.color;
+                ctx.fill();
+                ctx.closePath();
+                
+                // Draw portal icon at the end
+                ctx.beginPath();
+                ctx.rect(20 + progressBarWidth - 5, 15, 10, 20);
+                ctx.fillStyle = portal.color;
+                ctx.fill();
+                ctx.closePath();
+                
+                // Update debug info
+                if (debugMode) {
+                    debugInfo.textContent = `Player: ${Math.round(player.x)},${Math.round(player.y)}, Speed: ${player.speedX.toFixed(2)},${player.speedY.toFixed(2)}, onPlatform: ${player.onPlatform}, canJump: ${player.canJump}`;
+                }
+            }
+            
+            function drawGame() {
+                ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+                
+                // Draw background elements
+                drawBackground();
+                
+                // Draw game elements
+                drawPlatforms();
+                drawStars();
+                drawObstacles();
+                drawPortal();
+                drawPlayer();
+                
+                // Draw UI elements
+                drawUI();
+            }
+            
+            // Game physics and collision
+            function updatePlayer() {
+                // Apply gravity
+                player.speedY += player.acceleration;
+                
+                // Apply horizontal movement from controls
+                if ((keys['ArrowLeft'] || keys['a'] || touchControls.left) && !keys['ArrowRight'] && !touchControls.right) {
+                    player.speedX = Math.max(player.speedX - 0.5, -player.maxSpeedX);
+                } else if ((keys['ArrowRight'] || keys['d'] || touchControls.right) && !keys['ArrowLeft'] && !touchControls.left) {
+                    player.speedX = Math.min(player.speedX + 0.5, player.maxSpeedX);
+                } else {
+                    // Apply friction
+                    player.speedX *= 0.9;
+                }
+                
+                // Apply jump if requested and player can jump
+                if ((keys['ArrowUp'] || keys[' '] || keys['w'] || touchControls.jump) && player.canJump) {
+                    player.speedY = player.jumpForce;
+                    player.canJump = false;
+                    player.isJumping = true;
+                    if (!muted) jumpSound.play();
+                }
+                
+                // Reset jump flag if keys released
+                if (!keys['ArrowUp'] && !keys[' '] && !keys['w'] && !touchControls.jump) {
+                    player.isJumping = false;
+                }
+                
+                // Apply physics limits
+                player.speedY = Math.min(player.speedY, player.maxSpeedY);
+                
+                // Flag to check if player is on platform
+                player.onPlatform = false;
+                player.canJump = false;
+                
+                // Update position
+                const newX = player.x + player.speedX;
+                const newY = player.y + player.speedY;
+                
+                // Check platform collisions
+                for (let i = 0; i < platforms.length; i++) {
+                    const platform = platforms[i];
+                    
+                    // Skip transparent (disappeared) platforms
+                    if (platform.color === 'transparent') {
+                        continue;
+                    }
+                    
+                    // Check if player will collide with platform horizontally
+                    if (newY + player.radius > platform.y && 
+                        newY - player.radius < platform.y + platform.height) {
+                        
+                        // Moving platform horizontal collision
+                        if (platform.type === 'moving' && 
+                            newX + player.radius > platform.x && 
+                            newX - player.radius < platform.x + platform.width) {
+                            // If on top of moving platform, move with it
+                            if (player.y + player.radius <= platform.y + 5 && player.speedY >= 0) {
+                                // Apply platform's movement to player
+                                if (!platform.moveVertical) {
+                                    player.x += platform.moveSpeed * (platform.moveDirection || 1);
+                                }
+                            }
+                        }
+                        
+                        // Check left collision
+                        if (newX + player.radius > platform.x && 
+                            player.x + player.radius <= platform.x && 
+                            newY + player.radius > platform.y && 
+                            newY - player.radius < platform.y + platform.height) {
+                            player.speedX = 0;
+                            player.x = platform.x - player.radius;
+                        }
+                        
+                        // Check right collision
+                        if (newX - player.radius < platform.x + platform.width && 
+                            player.x - player.radius >= platform.x + platform.width && 
+                            newY + player.radius > platform.y && 
+                            newY - player.radius < platform.y + platform.height) {
+                            player.speedX = 0;
+                            player.x = platform.x + platform.width + player.radius;
+                        }
+                    }
+                    
+                    // Check vertical collision (landing on platform)
+                    if (newX + player.radius > platform.x && 
+                        newX - player.radius < platform.x + platform.width) {
+                        
+                        // Check bottom collision with platform
+                        if (newY - player.radius < platform.y + platform.height && 
+                            player.y - player.radius >= platform.y + platform.height) {
+                            player.speedY = 0;
+                            player.y = platform.y + platform.height + player.radius;
+                        }
+                        
+                        // Check top collision with platform (landing)
+                        if (newY + player.radius > platform.y && 
+                            player.y + player.radius <= platform.y && 
+                            player.speedY >= 0) {
+                            
+                            player.y = platform.y - player.radius;
+                            player.onPlatform = true;
+                            player.canJump = true;
+                            
+                            // Special platform behavior
+                            if (platform.type === 'bouncy') {
+                                // Bouncy platform gives extra bounce
+                                player.speedY = player.bounceForce * 1.5;
+                                if (!muted) bounceSound.play();
+                            } else if (platform.type === 'disappearing') {
+                                // Disappearing platform starts countdown
+                                if (platform.countdown === 0) {
+                                    platform.countdown = 60; // frames before disappearing
+                                }
+                            } else {
+                                player.speedY = 0;
+                            }
+                            
+                            // If player lands on any platform, reset jump flag
+                            if (!player.isJumping) {
+                                player.canJump = true;
+                            }
+                        }
+                    }
+                    
+                    // Update disappearing platform countdown
+                    if (platform.type === 'disappearing' && platform.countdown > 0) {
+                        platform.countdown--;
+                        
+                        // Make platform flash as countdown progresses
+                        if (platform.countdown < 30) {
+                            platform.color = platform.countdown % 10 < 5 ? platform.origColor : 'rgba(255,255,255,0.8)';
+                        }
+                        
+                        // Hide platform when countdown reaches zero
+                        if (platform.countdown === 0) {
+                            platform.color = 'transparent';
+                        }
+                    }
+                    
+                    // Update moving platforms
+                    if (platform.type === 'moving') {
+                        if (platform.moveVertical) {
+                            // Vertical movement
+                            platform.y += (platform.moveDirection || 1) * platform.moveSpeed;
+                            
+                            // Change direction at limits
+                            if (platform.moveDirection === 1 && 
+                                platform.y > platform.startY + platform.moveRange) {
+                                platform.moveDirection = -1;
+                            } else if (platform.moveDirection === -1 && 
+                                      platform.y < platform.startY) {
+                                platform.moveDirection = 1;
+                            } else if (!platform.moveDirection) {
+                                platform.moveDirection = 1;
+                            }
+                        } else {
+                            // Horizontal movement
+                            platform.x += (platform.moveDirection || 1) * platform.moveSpeed;
+                            
+                            // Change direction at limits
+                            if (platform.moveDirection === 1 && 
+                                platform.x > platform.startX + platform.moveRange) {
+                                platform.moveDirection = -1;
+                            } else if (platform.moveDirection === -1 && 
+                                      platform.x < platform.startX) {
+                                platform.moveDirection = 1;
+                            } else if (!platform.moveDirection) {
+                                platform.moveDirection = 1;
+                            }
+                        }
+                    }
+                }
+                
+                // Check obstacle collisions
+                for (let i = 0; i < obstacles.length; i++) {
+                    const obstacle = obstacles[i];
+                    
+                    let collided = false;
+                    
+                    if (obstacle.type === 'spike') {
+                        // For spike obstacles, use a triangular collision check
+                        const spikeWidth = obstacle.width / 5;
+                        for (let j = 0; j < 5; j++) {
+                            const spikeX = obstacle.x + j * spikeWidth;
+                            const spikeTop = obstacle.y - obstacle.height;
+                            
+                            // Check distance to spike tip
+                            const dx = player.x - (spikeX + spikeWidth / 2);
+                            const dy = player.y - spikeTop;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            
+                            if (distance < player.radius + 10) {
+                                collided = true;
+                                break;
+                            }
+                        }
+                    } else if (obstacle.type === 'rotating') {
+                        // For rotating obstacles, calculate rotated coordinates
+                        const dx = player.x - obstacle.centerX;
+                        const dy = player.y - obstacle.centerY;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (distance < player.radius + obstacle.width / 2) {
+                            collided = true;
+                        }
+                    } else {
+                        // Regular box collision
+                        if (player.x + player.radius > obstacle.x && 
+                            player.x - player.radius < obstacle.x + obstacle.width && 
+                            player.y + player.radius > obstacle.y && 
+                            player.y - player.radius < obstacle.y + obstacle.height) {
+                            collided = true;
+                        }
+                    }
+                    
+                    if (collided) {
+                        if (debugMode) {
+                            debugInfo.textContent = `Collision with obstacle at ${Math.round(obstacle.x)},${Math.round(obstacle.y)}`;
+                        }
+                        gameOver();
+                        return;
+                    }
+                    
+                    // Update moving obstacles
+                    if (obstacle.type === 'moving_obstacle') {
+                        if (obstacle.moveVertical) {
+                            // Vertical movement
+                            obstacle.y += (obstacle.moveDirection || 1) * obstacle.moveSpeed;
+                            
+                            // Change direction at limits
+                            if (obstacle.moveDirection === 1 && 
+                                obstacle.y > obstacle.startY + obstacle.moveRange) {
+                                obstacle.moveDirection = -1;
+                            } else if (obstacle.moveDirection === -1 && 
+                                      obstacle.y < obstacle.startY) {
+                                obstacle.moveDirection = 1;
+                            } else if (!obstacle.moveDirection) {
+                                obstacle.moveDirection = 1;
+                            }
+                        } else {
+                            // Horizontal movement
+                            obstacle.x += (obstacle.moveDirection || 1) * obstacle.moveSpeed;
+                            
+                            // Change direction at limits
+                            if (obstacle.moveDirection === 1 && 
+                                obstacle.x > obstacle.startX + obstacle.moveRange) {
+                                obstacle.moveDirection = -1;
+                            } else if (obstacle.moveDirection === -1 && 
+                                      obstacle.x < obstacle.startX) {
+                                obstacle.moveDirection = 1;
+                            } else if (!obstacle.moveDirection) {
+                                obstacle.moveDirection = 1;
+                            }
+                        }
+                    } else if (obstacle.type === 'rotating') {
+                        // Update rotation angle
+                        obstacle.angle += obstacle.rotateSpeed;
+                        
+                        // Update obstacle position based on rotation
+                        obstacle.x = obstacle.centerX + Math.cos(obstacle.angle) * obstacle.radius - obstacle.width / 2;
+                        obstacle.y = obstacle.centerY + Math.sin(obstacle.angle) * obstacle.radius - obstacle.height / 2;
+                    }
+                }
+                
+                // Check star collection
+                for (let i = 0; i < stars.length; i++) {
+                    const star = stars[i];
+                    
+                    if (!star.collected) {
+                        const dx = player.x - star.x;
+                        const dy = player.y - star.y;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (distance < player.radius + star.radius) {
+                            star.collected = true;
+                            starsCollected++;
+                            score += 100;
+                            
+                            // Update displays
+                            scoreDisplay.textContent = score;
+                            starsDisplay.textContent = starsCollected;
+                            
+                            if (!muted) collectSound.play();
+                        }
+                    }
+                }
+                
+                // Check if player reached the portal
+                if (portal && 
+                    player.x + player.radius > portal.x && 
+                    player.x - player.radius < portal.x + portal.width && 
+                    player.y + player.radius > portal.y && 
+                    player.y - player.radius < portal.y + portal.height) {
+                    levelComplete();
+                    return;
+                }
+                
+                // Check if player falls off the world
+                if (player.y > canvasHeight + 100) {
+                    if (debugMode) {
+                        debugInfo.textContent = `Player fell off world at ${Math.round(player.x)},${Math.round(player.y)}`;
+                    }
+                    gameOver();
+                    return;
+                }
+                
+                // Update player position
+                player.x = newX;
+                player.y = newY;
+                
+                // Update camera position to follow player
+                camera.following = {
+                    x: player.x - canvasWidth / 3,
+                    y: Math.max(0, player.y - canvasHeight / 2)
+                };
+                
+                // Apply smooth camera movement (adjusted by difficulty)
+                const smoothingFactor = difficulties[currentDifficulty].cameraSmoothing;
+                camera.x += (camera.following.x - camera.x) * smoothingFactor;
+                camera.y += (camera.following.y - camera.y) * smoothingFactor;
+                
+                // Keep camera within level bounds
+                camera.x = Math.max(0, Math.min(camera.x, levelLength - canvasWidth));
+            }
+            
+            // Game loop
+            function gameLoop() {
+                if (gameRunning && !gamePaused) {
+                    // Update game state
+                    updatePlayer();
+                    
+                    // Draw everything
+                    drawGame();
+                    
+                    // Continue the game loop
+                    requestAnimationFrame(gameLoop);
+                }
+            }
+            
+            // Game state functions
+            function startGame() {
+                gameRunning = true;
+                gamePaused = false;
+                score = 0;
+                starsCollected = 0;
+                level = 1;
+                
+                // Update displays
+                scoreDisplay.textContent = score;
+                starsDisplay.textContent = starsCollected;
+                levelDisplay.textContent = level;
+                
+                // Hide overlays
+                startScreen.classList.add('hidden');
+                gameOverScreen.classList.add('hidden');
+                levelCompleteScreen.classList.add('hidden');
+                levelTransition.classList.add('hidden');
+                
+                // Update button text
+                pauseBtn.textContent = 'Pause';
+                
+                // Apply current difficulty settings
+                setDifficulty(currentDifficulty);
+                
+                // Create level
+                createLevel(level);
+                
+                // Start the game loop
+                gameLoop();
+            }
+            
+            function gameOver() {
+                if (!muted) gameOverSound.play();
+                gameRunning = false;
+                
+                // Update final score display
+                finalScoreDisplay.textContent = score;
+                finalStarsDisplay.textContent = starsCollected;
+                
+                // Show game over screen
+                gameOverScreen.classList.remove('hidden');
+            }
+            
+            function levelComplete() {
+                if (!muted) portalSound.play();
+                gamePaused = true;
+                
+                // Update level display
+                levelScoreDisplay.textContent = score;
+                levelStarsDisplay.textContent = starsCollected;
+                levelTotalStarsDisplay.textContent = totalStars;
+                
+                // Show level complete screen
+                levelCompleteScreen.classList.remove('hidden');
+            }
+            
+            function nextLevel() {
+                level++;
+                levelDisplay.textContent = level;
+                nextLevelDisplay.textContent = level;
+                
+                // Hide level complete screen
+                levelCompleteScreen.classList.add('hidden');
+                
+                // Show level transition
+                levelTransition.classList.remove('hidden');
+                
+                // Create next level and resume game after transition
+                setTimeout(() => {
+                    levelTransition.classList.add('hidden');
+                    createLevel(level);
+                    gamePaused = false;
+                    gameLoop();
+                }, 2000);
+            }
+            
+            function togglePause() {
+                gamePaused = !gamePaused;
+                pauseBtn.textContent = gamePaused ? 'Resume' : 'Pause';
+                
+                if (!gamePaused) {
+                    // Resume the game loop
+                    gameLoop();
+                }
+            }
+            
+            function toggleMute() {
+                muted = !muted;
+                muteBtn.textContent = muted ? '🔇' : '🔊';
+            }
+            
+            // Function to switch difficulty
+            function setDifficulty(difficulty) {
+                if (!difficultySwitchEnabled && gameRunning) return;
+                
+                currentDifficulty = difficulty;
+                
+                // Update player properties based on difficulty
+                player.acceleration = difficulties[difficulty].acceleration;
+                player.maxSpeedX = difficulties[difficulty].maxSpeedX;
+                player.maxSpeedY = difficulties[difficulty].maxSpeedY;
+                player.jumpForce = difficulties[difficulty].jumpForce;
+                player.bounceForce = difficulties[difficulty].bounceForce;
+                player.radius = difficulties[difficulty].playerRadius;
+                
+                // Update difficulty display
+                const difficultyDisplay = document.getElementById('difficulty-display');
+                difficultyDisplay.textContent = difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
+                
+                // Update button colors
+                document.getElementById('easy-btn').className = difficulty === 'easy' ? 
+                    'btn bg-success hover:bg-success/80 text-white font-bold py-2 px-4 rounded-lg text-lg transition-colors' : 
+                    'btn bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-bold py-2 px-4 rounded-lg text-lg transition-colors';
+                
+                document.getElementById('normal-btn').className = difficulty === 'normal' ? 
+                    'btn bg-warning hover:bg-warning/80 text-white font-bold py-2 px-4 rounded-lg text-lg transition-colors' : 
+                    'btn bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-bold py-2 px-4 rounded-lg text-lg transition-colors';
+                
+                document.getElementById('hard-btn').className = difficulty === 'hard' ? 
+                    'btn bg-danger hover:bg-danger/80 text-white font-bold py-2 px-4 rounded-lg text-lg transition-colors' : 
+                    'btn bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-white font-bold py-2 px-4 rounded-lg text-lg transition-colors';
+                
+                // If game is already running, recreate the level with new difficulty
+                if (gameRunning) {
+                    createLevel(level);
+                }
+            }
+            
+            // Control whether difficulty can be changed mid-game
+            let difficultySwitchEnabled = true;
+            
+            // Function to show/hide the help screen
+            function toggleHelpScreen() {
+                const helpScreen = document.getElementById('help-screen');
+                helpScreen.classList.toggle('hidden');
+                
+                // Pause game while help is showing
+                if (!helpScreen.classList.contains('hidden') && gameRunning) {
+                    if (!gamePaused) {
+                        togglePause();
+                        // Flag to indicate pause was triggered by help screen
+                        helpScreenPaused = true;
+                    }
+                } else if (helpScreenPaused && gameRunning) {
+                    // Resume game if it was paused by help screen
+                    togglePause();
+                    helpScreenPaused = false;
+                }
+            }
+            
+            // Track if game was paused by help screen
+            let helpScreenPaused = false;
+            
+            // Event listeners
+            startBtn.addEventListener('click', startGame);
+            restartBtn.addEventListener('click', startGame);
+            nextLevelBtn.addEventListener('click', nextLevel);
+            pauseBtn.addEventListener('click', togglePause);
+            muteBtn.addEventListener('click', toggleMute);
+            
+            // Help button handlers
+            document.getElementById('help-btn').addEventListener('click', toggleHelpScreen);
+            document.getElementById('close-help-btn').addEventListener('click', toggleHelpScreen);
+            
+            // Difficulty button handlers
+            document.getElementById('easy-btn').addEventListener('click', () => {
+                setDifficulty('easy');
+            });
+            
+            document.getElementById('normal-btn').addEventListener('click', () => {
+                setDifficulty('normal');
+            });
+            
+            document.getElementById('hard-btn').addEventListener('click', () => {
+                setDifficulty('hard');
+            });
+            
+            // Keyboard controls
+            window.addEventListener('keydown', (e) => {
+                keys[e.key] = true;
+                
+                // Prevent default for arrow keys to avoid page scrolling
+                if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) {
+                    e.preventDefault();
+                }
+            });
+            
+            window.addEventListener('keyup', (e) => {
+                keys[e.key] = false;
+            });
+            
+            // Touch controls
+            if (leftBtn) {
+                leftBtn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    touchControls.left = true;
+                }, { passive: false });
+                
+                leftBtn.addEventListener('touchend', () => {
+                    touchControls.left = false;
+                });
+            }
+            
+            if (rightBtn) {
+                rightBtn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    touchControls.right = true;
+                }, { passive: false });
+                
+                rightBtn.addEventListener('touchend', () => {
+                    touchControls.right = false;
+                });
+            }
+            
+            if (jumpBtn) {
+                jumpBtn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    touchControls.jump = true;
+                }, { passive: false });
+                
+                jumpBtn.addEventListener('touchend', () => {
+                    touchControls.jump = false;
+                });
+            }
+            
+            // Check for dark mode
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                document.documentElement.classList.add('dark');
+            }
+            
+            // Listen for changes in color scheme
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+                if (event.matches) {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
